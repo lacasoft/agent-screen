@@ -1,20 +1,11 @@
 // Test contra el escritorio de práctica real. SOLO LECTURA: conecta, captura y mueve el puntero.
 // Requiere DESKTOP_URL y DESKTOP_PASSWORD (en .env). Sin ellas, se omite. `npm run test:live`.
-import { readFileSync } from 'node:fs';
-import { parseEnv } from 'node:util';
 import { diffFrames, isSignificant } from '../src/vnc/frame';
 import { openRfb2Session } from '../src/vnc/rfb2-session';
 import { VncDesktop } from '../src/vnc/vnc-desktop';
+import { liveEnv } from './live-env';
 
-// Jest da a cada test una copia de process.env: se lee .env aparte (sin imprimir nada).
-function fromDotEnv(): Record<string, string | undefined> {
-  try {
-    return parseEnv(readFileSync(`${__dirname}/../.env`, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-const env = { ...fromDotEnv(), ...process.env };
+const env = liveEnv();
 const url = env.DESKTOP_URL ?? '';
 const password = env.DESKTOP_PASSWORD ?? '';
 const live = url && password ? describe : describe.skip;

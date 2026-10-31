@@ -26,13 +26,14 @@ Agente que recibe tareas en lenguaje natural y opera aplicaciones legacy **desco
 
 ## Estructura del repositorio
 
-Hechos: `tasks`, `vnc`, `common`, `config`, `health`. Vacíos: `agent`, `llm`.
+Hechos: `tasks`, `vnc`, `llm`, `common`, `config`, `health`. Vacío: `agent`.
 
 - `src/tasks/`: `POST/GET /tasks`, `TasksService` (lease → 409), `TaskRunner` (watchdog 270 s, redacción, persistir → liberar lease), `TaskRepository` → `sqlite/` (`node:sqlite`, migraciones). Puerto `TaskExecutor` (token `TASK_EXECUTOR`): hoy `UnavailableAgentExecutor`; lo sustituirá el agente.
 - `src/vnc/`: `VncConnector` → `VncDesktop` (click/type/keys/scroll/settle) sobre `RfbSession` (`rfb2-session.ts`).
 - `src/common/`: `BearerAuthGuard` (global, `@Public()`), `ApiExceptionFilter` (`{code,message,details?}`), `ValidationPipe`, `redactSecrets`.
 - `src/config/`: esquema Joi del env. `src/health/`: `GET /health` abierto.
-- `src/agent/`: bucle observar → decidir → actuar → verificar, `Guard`. `src/llm/`: cliente OpenRouter.
+- `src/llm/`: puerto `LlmClient` (token `LLM_CLIENT`) → `OpenRouterClient` (fetch, timeout/reintento ADR-0012, respaldo `models`); `actions.ts`: 7 herramientas + `parseToolCall` (valida forma, no política). PNG en `src/vnc/png.ts`.
+- `src/agent/`: bucle observar → decidir → actuar → verificar, `Guard`.
 - `test/`: e2e (`*.e2e-spec.ts`, env en `e2e-env.ts`) y live (`*.live-spec.ts`). Unit tests junto al código (`*.spec.ts`).
 
 ## Arquitectura
@@ -137,7 +138,8 @@ Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 ## Notas / gotchas
 
 - **Node ≥ 24.9 obligatorio** (`nvm use`): con Node 22, Jest no carga Nest 12 (ESM) y falla con "Must use import to load ES Module". El `default` de nvm en esta máquina sigue apuntando a 22.
-- `nest build` deja la salida en `dist/` sin `src/` (`dist/main.js`, `dist/vnc/…`). `test:live` es solo lectura y lee `.env` aparte (Jest copia `process.env`).
+- `nest build` → `dist/main.js`, `dist/vnc/…` (sin `src/`). `test:live`: escritorio (solo lectura) + 1 llamada LLM (~0,005 créditos); lee `.env` aparte (Jest copia `process.env`).
+- **OpenRouter con `require_parameters: true` descarta proveedores que no admitan TODO lo enviado** (404 «No endpoints found»): con `claude-sonnet-5.5` no envíes `temperature`, `parallel_tool_calls` ni `tool_choice: "required"`; usa `"auto"`. Mira `supported_parameters` en `/api/v1/models`.
 - `AGENTS.md` sugiere NestJS Observe. No forma parte del diseño: no lo añadas sin decidirlo, y nunca envíes capturas ni secretos a telemetría.
 - **Spike `rfb2` superado (2026-10-31, `spikes/rfb2-spike.mjs`).** WSS + VNC auth listos en ~1,1 s; 1280×800, ZRLE; clic de 150 ms, `Ctrl+A` (reemplaza) y tecleo funcionan. Trampas medidas:
   - La 1.ª update puede traer solo `extendedDesktopSize`: espera una con rects `pixels` o `copy`.

@@ -1,6 +1,6 @@
 import { connect, Framebuffer, RfbError, type RfbClient } from 'rfb2';
 import WebSocket, { createWebSocketStream } from 'ws';
-import { type Clock, systemClock } from './clock';
+import { type Clock, systemClock } from '../common/clock';
 import type { Frame } from './frame';
 import {
   type DesktopTarget,
