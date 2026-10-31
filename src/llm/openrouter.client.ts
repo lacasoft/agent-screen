@@ -165,7 +165,12 @@ interface OpenRouterBody {
   choices?: {
     message?: { content?: string | null; tool_calls?: ToolCall[] };
   }[];
-  usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    cost?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 }
 
 function parseResponse(
@@ -222,6 +227,9 @@ function parseResponse(
       completionTokens: body.usage?.completion_tokens ?? 0,
       ...(typeof body.usage?.cost === 'number'
         ? { cost: body.usage.cost }
+        : {}),
+      ...(typeof body.usage?.prompt_tokens_details?.cached_tokens === 'number'
+        ? { cachedTokens: body.usage.prompt_tokens_details.cached_tokens }
         : {}),
     },
   };

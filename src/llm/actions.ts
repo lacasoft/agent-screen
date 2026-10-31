@@ -23,7 +23,7 @@ export interface CommitInfo {
   readonly reintento?: boolean;
 }
 
-export type AgentAction =
+type BaseAction =
   | ({
       type: 'click';
       x: number;
@@ -52,6 +52,14 @@ export type AgentAction =
   | { type: 'finish'; resumen: string }
   | { type: 'fail'; resumen: string };
 
+/** Dato leído en la captura actual que el modelo conserva para pasos posteriores. */
+export interface NoteInfo {
+  readonly nota?: string;
+}
+
+type Terminal = Extract<BaseAction, { type: 'finish' | 'fail' }>;
+export type AgentAction = (Exclude<BaseAction, Terminal> & NoteInfo) | Terminal;
+
 export type AgentActionType = AgentAction['type'];
 
 export interface ScreenSize {
@@ -64,6 +72,7 @@ export const WAIT_MAX_MS = 5_000;
 const MAX_TEXT = 500;
 const MAX_REASON = 300;
 const MAX_RESUMEN = 2_000;
+export const MAX_NOTE = 200;
 
 export interface ToolDefinition {
   type: 'function';
@@ -78,6 +87,12 @@ const reason = {
   type: 'string',
   description: 'Por qué esta acción, en una frase.',
   maxLength: MAX_REASON,
+};
+const nota = {
+  type: 'string',
+  maxLength: MAX_NOTE,
+  description:
+    'Opcional: dato LEÍDO en la captura actual que necesitarás después (p. ej. "pág. 1: 20 filas vencidas"). Se conserva entre pasos; las capturas anteriores no.',
 };
 const intent = {
   type: 'string',
@@ -144,6 +159,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
           intent,
           ...commit,
           reason,
+          nota,
         },
         ['x', 'y', 'intent', 'reason'],
       ),
@@ -156,6 +172,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
           text: { type: 'string', minLength: 1, maxLength: MAX_TEXT },
           replace: { type: 'boolean', default: false },
           reason,
+          nota,
         },
         ['text', 'reason'],
       ),
@@ -169,6 +186,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
           intent,
           ...commit,
           reason,
+          nota,
         },
         ['combo', 'intent', 'reason'],
       ),
@@ -183,6 +201,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
           direction: { type: 'string', enum: ['up', 'down'] },
           amount: { type: 'integer', minimum: 1, maximum: 20, default: 3 },
           reason,
+          nota,
         },
         ['x', 'y', 'direction', 'reason'],
       ),
@@ -194,6 +213,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
         {
           ms: { type: 'integer', minimum: WAIT_MIN_MS, maximum: WAIT_MAX_MS },
           reason,
+          nota,
         },
         ['ms', 'reason'],
       ),
@@ -246,7 +266,27 @@ export function parseToolCall(
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     return { ok: false, error: `argumentos de ${name} deben ser un objeto` };
   }
-  const a = args as Record<string, unknown>;
+  const { nota: rawNote, ...a } = args as Record<string, unknown>;
+  try {
+    if (rawNote !== undefined && (name === 'finish' || name === 'fail')) {
+      throw new Error('campos no permitidos: nota');
+    }
+    const note =
+      rawNote === undefined ? {} : { nota: str(rawNote, 'nota', 1, MAX_NOTE) };
+    const r = parseFields(name, a, screen);
+    return r.ok && r.action.type !== 'finish' && r.action.type !== 'fail'
+      ? { ok: true, action: { ...r.action, ...note } }
+      : r;
+  } catch (e) {
+    return { ok: false, error: `${name}: ${(e as Error).message}` };
+  }
+}
+
+function parseFields(
+  name: string,
+  a: Record<string, unknown>,
+  screen: ScreenSize,
+): ParseResult {
   try {
     switch (name) {
       case 'click':

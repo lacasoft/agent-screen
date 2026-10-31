@@ -227,3 +227,39 @@ describe('Guard', () => {
     });
   });
 });
+
+describe('Guard: nada de suposiciones en finish (falso éxito de E3)', () => {
+  const finish = (resumen: string) =>
+    checkAction({ type: 'finish', resumen }, ctx());
+
+  it.each([
+    'respuesta: 51\nLas páginas 1 y 2 no las conté: asumo 20 filas cada una.',
+    'respuesta: 45\nSupongo que no hay más páginas.',
+    'respuesta: 40\nTotal aproximado según la barra.',
+    'respuesta: 12\nProbablemente sean 12.',
+    'respuesta: 30\nDebería haber 30 por página.',
+    'respuesta: 20\nHay unos 20 registros.',
+  ])('bloquea: %s', (resumen) => {
+    expect(finish(resumen)).toMatchObject({
+      allowed: false,
+      reason: expect.stringContaining('suposición'),
+    });
+  });
+
+  it.each([
+    'respuesta: 45\nFiltro Cliente = Ferretería Ruiz y Estado = Vencida; el contador muestra 45.',
+    'respuesta: 45\nTres páginas: 20 + 20 + 5 filas, todas vistas.',
+    'Cliente creado y verificado en la lista con NIT 901234567.',
+  ])('permite: %s', (resumen) => {
+    expect(finish(resumen).allowed).toBe(true);
+  });
+
+  it('no aplica a fail (explicar lo que no se pudo verificar es correcto)', () => {
+    expect(
+      checkAction(
+        { type: 'fail', resumen: 'No pude contar: asumo que hay más páginas.' },
+        ctx(),
+      ).allowed,
+    ).toBe(true);
+  });
+});

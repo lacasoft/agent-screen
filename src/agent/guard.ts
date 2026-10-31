@@ -24,6 +24,9 @@ const DESTRUCTIVE_REQUEST =
 const DESTRUCTIVE_REASON =
   /\b(eliminar|borrar|suprimir|anular|vaciar|dar de baja|descartar|delete|remove)\b|bot[oó]n\s+(eliminar|borrar|anular|suprimir)/i;
 const RESPUESTA_LINE = /^\s*respuesta\s*:/gim;
+/** Marcas de que el resultado se supuso en vez de leerse (falso éxito medido en E3). */
+const ASSUMPTION =
+  /\b(asum[oíi]\w*|supon(go|iendo|emos)|supuse|aproximad\w*|estimad\w*|estim[oé]|probablemente|presumibl\w*|deber[ií]a(n)? (haber|ser|tener)|calculo que|deduzco|extrapol\w*|alrededor de|unos? \d+|m[aá]s o menos)\b/i;
 
 /**
  * Política determinista sobre la acción ya validada en forma. No decide qué hacer: solo qué
@@ -42,6 +45,12 @@ export function checkAction(
       if (n > 1) {
         return block(
           'el resumen debe tener como máximo UNA línea "respuesta:"; con dos datos usa "respuesta: <dato 1>; <dato 2>"',
+        );
+      }
+      const assumed = ASSUMPTION.exec(action.resumen);
+      if (assumed) {
+        return block(
+          `el resumen contiene una suposición («${assumed[0]}»): termina solo con datos leídos en pantalla; verifica lo que falte o termina con fail`,
         );
       }
       return { allowed: true };

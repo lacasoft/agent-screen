@@ -6,7 +6,7 @@ import {
   parseToolCall,
   type ScreenSize,
 } from '../llm/actions';
-import type { LlmClient } from '../llm/llm-client';
+import type { ChatResult, LlmClient } from '../llm/llm-client';
 import { LlmError } from '../llm/llm-error';
 import { LLM_CLIENT } from '../llm/llm.constants';
 import type { TaskOutcome } from '../tasks/task';
@@ -24,7 +24,10 @@ import {
   AGENT_CLOCK,
   MAX_BLOCKED_IN_A_ROW,
   MAX_INVALID_IN_A_ROW,
+  MAX_NOTES,
   MAX_STEPS,
+  REPEAT_LIMIT,
+  REPEAT_WINDOW,
 } from './agent.constants';
 import { Conversation } from './conversation';
 import { checkAction, type CommitRecord } from './guard';
@@ -40,9 +43,19 @@ const RESUMEN = {
     'El modelo no produjo acciones válidas de forma reiterada; se detuvo la interacción sin completar la tarea.',
   blocked:
     'Las acciones propuestas fueron bloqueadas reiteradamente por la política de seguridad; se detuvo la interacción.',
+  lost: 'Se perdió la conexión con el escritorio; se detuvo la interacción.',
   error:
     'Error durante la ejecución; se detuvo toda interacción con el escritorio.',
 };
+
+interface RunStats {
+  steps: number;
+  tokensIn: number;
+  tokensOut: number;
+  cached: number;
+  cost: number;
+  model: string;
+}
 
 /**
  * Agente de pantalla (ADR-0003): observar → decidir (LLM) → Guard → actuar (VNC) → verificar.
@@ -74,15 +87,20 @@ export class ScreenAgent implements TaskExecutor {
       return { estado: 'fallida', resumen: RESUMEN.connect(code) };
     }
 
+    const stats: RunStats = {
+      steps: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      cached: 0,
+      cost: 0,
+      model: '',
+    };
     const onAbort = () => desktop.destroy();
     ctx.signal.addEventListener('abort', onAbort, { once: true });
     try {
-      return await this.run(desktop, input, ctx);
+      return await this.run(desktop, input, ctx, stats);
     } catch (error) {
-      return {
-        estado: 'fallida',
-        resumen: this.describeError(error, ctx.signal),
-      };
+      return this.end('fallida', this.describeError(error, ctx.signal), stats);
     } finally {
       ctx.signal.removeEventListener('abort', onAbort);
       if (ctx.signal.aborted) desktop.destroy();
@@ -94,39 +112,48 @@ export class ScreenAgent implements TaskExecutor {
     desktop: VncDesktop,
     input: TaskExecutionInput,
     ctx: TaskExecutionContext,
+    stats: RunStats,
   ): Promise<TaskOutcome> {
     const screen: ScreenSize = { width: desktop.width, height: desktop.height };
     const tools = actionTools(screen);
     const remaining = () => ctx.deadlineAt - this.clock.now();
+    const secs = () => Math.max(0, Math.floor(remaining() / 1000));
     const convo = new Conversation(systemPrompt(screen));
     const commits: CommitRecord[] = [];
-    const stats = { tokensIn: 0, tokensOut: 0, cost: 0, model: '' };
+    const notes: string[] = [];
+    const executed: string[] = [];
     let invalid = 0;
     let blocked = 0;
 
     let frame = await desktop.capture();
-    convo.observe(taskMessage(input.instruction, screen), toPngDataUrl(frame));
+    convo.start(taskMessage(input.instruction, screen), toPngDataUrl(frame));
 
     for (let step = 1; step <= MAX_STEPS; step++) {
-      if (ctx.signal.aborted)
-        return { estado: 'fallida', resumen: RESUMEN.time };
+      stats.steps = step;
+      if (ctx.signal.aborted) return this.end('fallida', RESUMEN.time, stats);
+      convo.beginTurn();
+      const tLlm = this.clock.now();
       const result = await this.llm.chat({
         messages: convo.messages,
         tools,
         remainingMs: remaining(),
         signal: ctx.signal,
       });
-      stats.tokensIn += result.usage.promptTokens;
-      stats.tokensOut += result.usage.completionTokens;
-      stats.cost += result.usage.cost ?? 0;
-      stats.model = result.model;
+      const llmMs = Math.round(this.clock.now() - tLlm);
+      accumulate(stats, result);
+      const trace = (what: string, outcome: string) =>
+        this.logger.debug(
+          `tarea ${input.taskId} paso ${step} (${secs()} s): ${what} → ${outcome} · llm ${llmMs} ms · in ${result.usage.promptTokens} (caché ${result.usage.cachedTokens ?? 0})`,
+        );
 
       const [call, ...extra] = result.toolCalls;
       if (!call) {
         convo.assistant(result.text, []);
         convo.userText('Responde con exactamente UNA herramienta.');
+        convo.summarize(`Paso ${step}: respuesta sin herramienta.`);
+        trace('sin herramienta', 'se pide una');
         if (++invalid >= MAX_INVALID_IN_A_ROW)
-          return this.end('fallida', RESUMEN.invalid, step, stats);
+          return this.end('fallida', RESUMEN.invalid, stats);
         continue;
       }
       convo.assistant(result.text, result.toolCalls);
@@ -150,37 +177,51 @@ export class ScreenAgent implements TaskExecutor {
           call.id,
           `RECHAZADA: ${formatError}. Vuelve a proponer la acción corregida.`,
         );
+        convo.summarize(
+          `Paso ${step}: ${call.function.name} RECHAZADA (${formatError}).`,
+        );
+        trace(call.function.name, `RECHAZADA: ${formatError}`);
         if (++invalid >= MAX_INVALID_IN_A_ROW)
-          return this.end('fallida', RESUMEN.invalid, step, stats);
+          return this.end('fallida', RESUMEN.invalid, stats);
         continue;
       }
       invalid = 0;
+      // La nota describe la captura que el modelo acaba de ver: vale aunque la acción se bloquee.
+      if ('nota' in action && action.nota) {
+        notes.push(`Paso ${step}: ${action.nota}`);
+        if (notes.length > MAX_NOTES) notes.shift();
+      }
 
       const verdict = checkAction(action, {
         instruction: input.instruction,
         remainingMs: remaining(),
         commits,
       });
-      this.logger.debug(
-        `tarea ${input.taskId} paso ${step}: ${action.type}${'intent' in action ? `/${action.intent}` : ''} → ${verdict.allowed ? 'ok' : 'bloqueada'}`,
-      );
       if (!verdict.allowed) {
         convo.toolResult(call.id, `BLOQUEADA: ${verdict.reason}.`);
+        convo.summarize(
+          `Paso ${step}: ${describe(action)} BLOQUEADA (${verdict.reason}).`,
+        );
+        trace(describe(action), `BLOQUEADA: ${verdict.reason}`);
         if (++blocked >= MAX_BLOCKED_IN_A_ROW)
-          return this.end('fallida', RESUMEN.blocked, step, stats);
+          return this.end('fallida', RESUMEN.blocked, stats);
         continue;
       }
       blocked = 0;
 
-      if (action.type === 'finish')
-        return this.end('terminada', action.resumen, step, stats);
-      if (action.type === 'fail')
-        return this.end('fallida', action.resumen, step, stats);
+      if (action.type === 'finish' || action.type === 'fail') {
+        trace(action.type, 'fin');
+        return this.end(
+          action.type === 'finish' ? 'terminada' : 'fallida',
+          action.resumen,
+          stats,
+        );
+      }
       if (verdict.commit) commits.push(verdict.commit);
 
-      if (ctx.signal.aborted)
-        return { estado: 'fallida', resumen: RESUMEN.time };
+      if (ctx.signal.aborted) return this.end('fallida', RESUMEN.time, stats);
       const before = frame;
+      const tAct = this.clock.now();
       let note: string;
       if (action.type === 'wait') {
         await this.clock.sleep(action.ms);
@@ -194,23 +235,34 @@ export class ScreenAgent implements TaskExecutor {
           ? `EJECUTADA. La pantalla cambió${settled.stable ? ' y está estable' : ' y sigue cambiando'}.`
           : 'EJECUTADA, pero NO se observó cambio en pantalla (puede ir con retraso). Observa antes de repetir nada.';
       }
-      convo.toolResult(call.id, note);
-      convo.observe(
-        `Paso ${step}. Quedan ${Math.max(0, Math.floor(remaining() / 1000))} s. Captura actual:`,
-        toPngDataUrl(frame),
+      const repeats = trackRepeat(executed, signature(action));
+      const warning =
+        repeats >= REPEAT_LIMIT
+          ? ` AVISO: has repetido esta misma acción ${repeats} veces en los últimos ${REPEAT_WINDOW} pasos. Anota lo que ves (nota) y avanza, o termina.`
+          : '';
+      convo.toolResult(call.id, note + warning);
+      convo.observe(observationText(step, secs(), notes), toPngDataUrl(frame));
+      convo.summarize(
+        `Paso ${step}: ${describe(action)} → ${note.split('.')[0]}.`,
+      );
+      trace(
+        describe(action),
+        `${note.split('.')[0]}${warning ? ' (repetida)' : ''} en ${Math.round(this.clock.now() - tAct)} ms`,
       );
     }
-    return this.end('fallida', RESUMEN.steps, MAX_STEPS, stats);
+    return this.end('fallida', RESUMEN.steps, stats);
   }
 
   private end(
     estado: TaskOutcome['estado'],
     resumen: string,
-    steps: number,
-    stats: { tokensIn: number; tokensOut: number; cost: number; model: string },
+    stats: RunStats,
   ): TaskOutcome {
+    const pct = stats.tokensIn
+      ? Math.round((100 * stats.cached) / stats.tokensIn)
+      : 0;
     this.logger.log(
-      `fin ${estado} en ${steps} paso(s) · ${stats.model} · tokens ${stats.tokensIn}+${stats.tokensOut} · coste ${stats.cost.toFixed(4)}`,
+      `fin ${estado} en ${stats.steps} paso(s) · ${stats.model || '—'} · tokens ${stats.tokensIn}+${stats.tokensOut} (caché ${pct} %) · coste ${stats.cost.toFixed(4)}`,
     );
     return { estado, resumen };
   }
@@ -220,15 +272,75 @@ export class ScreenAgent implements TaskExecutor {
     if (
       error instanceof LlmError &&
       (error.code === 'NO_TIME' || error.code === 'ABORTED')
-    ) {
+    )
       return RESUMEN.time;
-    }
-    if (error instanceof VncError && error.code === 'CLOSED') {
-      return 'Se perdió la conexión con el escritorio; se detuvo la interacción.';
-    }
+    if (error instanceof VncError && error.code === 'CLOSED')
+      return RESUMEN.lost;
     const e = error instanceof Error ? error : new Error(String(error));
     this.logger.error(`${e.name}: ${e.message}`);
     return RESUMEN.error;
+  }
+}
+
+function accumulate(stats: RunStats, result: ChatResult): void {
+  stats.tokensIn += result.usage.promptTokens;
+  stats.tokensOut += result.usage.completionTokens;
+  stats.cached += result.usage.cachedTokens ?? 0;
+  stats.cost += result.usage.cost ?? 0;
+  stats.model = result.model;
+}
+
+function observationText(
+  step: number,
+  secondsLeft: number,
+  notes: readonly string[],
+): string {
+  const block = notes.length
+    ? `\nTus notas hasta ahora:\n${notes.map((n) => `- ${n}`).join('\n')}`
+    : '';
+  return `Paso ${step}. Quedan ${secondsLeft} s.${block}\nCaptura actual:`;
+}
+
+/** Firma de una acción ejecutada, para detectar bucles. */
+function signature(action: AgentAction): string {
+  switch (action.type) {
+    case 'click':
+      return `click:${action.x},${action.y}`;
+    case 'type':
+      return `type:${action.text}`;
+    case 'key':
+      return `key:${action.combo.toLowerCase()}`;
+    case 'scroll':
+      return `scroll:${action.x},${action.y},${action.direction}`;
+    default:
+      return action.type;
+  }
+}
+
+/** Registra la firma y devuelve cuántas veces aparece en la ventana reciente. */
+function trackRepeat(executed: string[], sig: string): number {
+  executed.push(sig);
+  if (executed.length > REPEAT_WINDOW) executed.shift();
+  return executed.filter((s) => s === sig).length;
+}
+
+/** Descripción corta de una acción para logs y para el resumen de turnos antiguos. */
+function describe(action: AgentAction): string {
+  const why = 'reason' in action ? ` «${action.reason}»` : '';
+  const nota = 'nota' in action && action.nota ? ` [nota: ${action.nota}]` : '';
+  switch (action.type) {
+    case 'click':
+      return `click (${action.x},${action.y}) [${action.intent}]${why}${nota}`;
+    case 'type':
+      return `type ${JSON.stringify(action.text.slice(0, 40))}${action.replace ? ' (reemplaza)' : ''}${why}${nota}`;
+    case 'key':
+      return `key ${action.combo} [${action.intent}]${why}${nota}`;
+    case 'scroll':
+      return `scroll ${action.direction} ×${action.amount} en (${action.x},${action.y})${why}${nota}`;
+    case 'wait':
+      return `wait ${action.ms} ms${why}${nota}`;
+    default:
+      return action.type;
   }
 }
 
