@@ -24,14 +24,3 @@ export interface TaskExecutor {
     context: TaskExecutionContext,
   ): Promise<TaskOutcome>;
 }
-
-/** Provisional hasta que exista el agente: no toca el escritorio. */
-export class UnavailableAgentExecutor implements TaskExecutor {
-  execute(): Promise<TaskOutcome> {
-    return Promise.resolve({
-      estado: 'fallida',
-      resumen:
-        'El agente todavía no está disponible; no se realizó ningún cambio en el escritorio.',
-    });
-  }
-}

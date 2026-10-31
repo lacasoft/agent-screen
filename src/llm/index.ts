@@ -1,12 +1,15 @@
 export type {
   AgentAction,
   AgentActionType,
+  CommitInfo,
+  Intent,
   ParseResult,
   ScreenSize,
   ToolDefinition,
 } from './actions';
 export {
   actionTools,
+  INTENTS,
   parseToolCall,
   WAIT_MAX_MS,
   WAIT_MIN_MS,

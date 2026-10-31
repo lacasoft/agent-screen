@@ -10,7 +10,14 @@ const parse = (name: string, args: unknown) =>
 
 describe('parseToolCall', () => {
   it('click con valores por defecto (izquierdo, simple)', () => {
-    expect(parse('click', { x: 90, y: 134, reason: 'campo Cliente' })).toEqual({
+    expect(
+      parse('click', {
+        x: 90,
+        y: 134,
+        intent: 'escribir',
+        reason: 'campo Cliente',
+      }),
+    ).toEqual({
       ok: true,
       action: {
         type: 'click',
@@ -18,7 +25,30 @@ describe('parseToolCall', () => {
         y: 134,
         button: 'left',
         double: false,
+        intent: 'escribir',
         reason: 'campo Cliente',
+      },
+    });
+  });
+
+  it('confirmación con datos de commit', () => {
+    expect(
+      parse('key', {
+        combo: 'Enter',
+        intent: 'confirmar',
+        registro: 'existente',
+        coincidencias: 1,
+        reason: 'guardar',
+      }),
+    ).toEqual({
+      ok: true,
+      action: {
+        type: 'key',
+        combo: 'Enter',
+        intent: 'confirmar',
+        registro: 'existente',
+        coincidencias: 1,
+        reason: 'guardar',
       },
     });
   });
@@ -53,13 +83,53 @@ describe('parseToolCall', () => {
   });
 
   it.each([
-    ['coordenada fuera de pantalla', 'click', { x: 1280, y: 10, reason: 'r' }],
-    ['coordenada negativa', 'click', { x: -1, y: 10, reason: 'r' }],
-    ['coordenada decimal', 'click', { x: 10.5, y: 10, reason: 'r' }],
-    ['coordenada como texto', 'click', { x: '10', y: 10, reason: 'r' }],
-    ['sin reason', 'click', { x: 1, y: 1 }],
-    ['campo extra', 'click', { x: 1, y: 1, reason: 'r', force: true }],
-    ['botón inválido', 'click', { x: 1, y: 1, reason: 'r', button: 'side' }],
+    [
+      'coordenada fuera de pantalla',
+      'click',
+      { x: 1280, y: 10, intent: 'navegar', reason: 'r' },
+    ],
+    [
+      'coordenada negativa',
+      'click',
+      { x: -1, y: 10, intent: 'navegar', reason: 'r' },
+    ],
+    [
+      'coordenada decimal',
+      'click',
+      { x: 10.5, y: 10, intent: 'navegar', reason: 'r' },
+    ],
+    [
+      'coordenada como texto',
+      'click',
+      { x: '10', y: 10, intent: 'navegar', reason: 'r' },
+    ],
+    ['sin reason', 'click', { x: 1, y: 1, intent: 'navegar' }],
+    ['sin intent', 'click', { x: 1, y: 1, reason: 'r' }],
+    [
+      'intent desconocido',
+      'key',
+      { combo: 'Enter', intent: 'borrar_todo', reason: 'r' },
+    ],
+    [
+      'coincidencias negativas',
+      'click',
+      { x: 1, y: 1, intent: 'confirmar', coincidencias: -1, reason: 'r' },
+    ],
+    [
+      'registro inválido',
+      'click',
+      { x: 1, y: 1, intent: 'confirmar', registro: 'otro', reason: 'r' },
+    ],
+    [
+      'campo extra',
+      'click',
+      { x: 1, y: 1, intent: 'navegar', reason: 'r', force: true },
+    ],
+    [
+      'botón inválido',
+      'click',
+      { x: 1, y: 1, intent: 'navegar', reason: 'r', button: 'side' },
+    ],
     ['texto vacío', 'type', { text: '', reason: 'r' }],
     ['wait demasiado largo', 'wait', { ms: 60_000, reason: 'r' }],
     ['scroll sin dirección', 'scroll', { x: 1, y: 1, reason: 'r' }],
@@ -69,8 +139,7 @@ describe('parseToolCall', () => {
     ['JSON inválido', 'click', '{x: 1'],
     ['argumentos no objeto', 'click', '[1,2]'],
   ])('rechaza: %s', (_c, name, args) => {
-    const r = parse(name, args);
-    expect(r.ok).toBe(false);
+    expect(parse(name, args).ok).toBe(false);
   });
 });
 
@@ -90,8 +159,10 @@ describe('actionTools', () => {
       expect(t.function.parameters.additionalProperties).toBe(false);
     const click = tools[0].function.parameters as {
       properties: Record<string, { maximum?: number }>;
+      required: string[];
     };
     expect(click.properties.x.maximum).toBe(1279);
     expect(click.properties.y.maximum).toBe(799);
+    expect(click.required).toContain('intent');
   });
 });

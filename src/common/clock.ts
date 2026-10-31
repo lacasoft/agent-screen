@@ -8,3 +8,9 @@ export const systemClock: Clock = {
   now: () => performance.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
+
+/** Reloj de pared (Date.now): el que usan los plazos de tarea (deadlineAt). */
+export const wallClock: Clock = {
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
