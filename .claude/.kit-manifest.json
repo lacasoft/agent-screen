@@ -1,0 +1,63 @@
+{
+  "version": "3.4.0",
+  "stacks": [
+    {
+      "id": "backend/nestjs",
+      "dirs": null
+    }
+  ],
+  "files": {
+    "CLAUDE.base.md": "c7a8aba0a59d5bfd",
+    "agents/api-architect.md": "f0f5ad61676f9abf",
+    "agents/api-security-audit.md": "54104dcdd997594c",
+    "agents/backend-developer.md": "a89061f6df93afe8",
+    "agents/coder.md": "2fcc1e7a7f7c3d53",
+    "agents/monitoring-specialist.md": "40e5f8df8c865bff",
+    "agents/penetration-tester.md": "3d6a8249e098e2a0",
+    "agents/planner.md": "509a1a31e578ee0a",
+    "agents/researcher.md": "6eee01f12d0d35f3",
+    "agents/reviewer.md": "f6c996587ed799ab",
+    "agents/security-engineer.md": "32a430ade18b4206",
+    "agents/seo-specialist.md": "c5c33daa40f6f7db",
+    "agents/tester.md": "e75ff3b9a9e1f554",
+    "agents/ui-designer.md": "2301ba34aeb190ac",
+    "agents/ux-researcher.md": "986da4d9425ebe37",
+    "commands/kit/status.md": "fcc63652c5b58aef",
+    "commands/swarm.md": "b780ebd58e307239",
+    "helpers/claude-imports.cjs": "2bb907022bd6b291",
+    "helpers/claude-permissions.cjs": "850dff1e4d8185e9",
+    "helpers/claude-rules.cjs": "23dfd98834fb6f15",
+    "helpers/hook-handler.cjs": "22d891c0419e85d2",
+    "helpers/loop.cjs": "78a81484e3feb936",
+    "helpers/statusline.cjs": "1d379e5d811c58bf",
+    "settings.json": "3306bd20e98245b7",
+    "skills/adr/SKILL.md": "aeaede9c1f0f01f6",
+    "skills/ci-cd/SKILL.md": "929ed353a134709c",
+    "skills/code-review-response/SKILL.md": "034569633d81bf41",
+    "skills/diagnose/SKILL.md": "771585321262f732",
+    "skills/git-worktrees/SKILL.md": "e7e904167fc3affc",
+    "skills/grill-me/SKILL.md": "ce163179431953c8",
+    "skills/handoff/SKILL.md": "7b5a200be9a0b960",
+    "skills/iac/SKILL.md": "492af6e81592bb9e",
+    "skills/loop-task/SKILL.md": "a54e4d427d6b20e1",
+    "skills/migration/SKILL.md": "6e8183a5ff46fdc3",
+    "skills/monorepo/SKILL.md": "25480d528de7cfbe",
+    "skills/owasp-review/SKILL.md": "983765c4feee40ce",
+    "skills/owasp-review/referencia.md": "f5652dfd1d7c0b20",
+    "skills/performance-profiling/SKILL.md": "a919b84f3bab5499",
+    "skills/project-context/SKILL.md": "3c1aa09916d2f909",
+    "skills/project-context/desde-design.md": "b21cbbbd2df67350",
+    "skills/release/SKILL.md": "686bc07cfa7a668d",
+    "skills/ship-gate/SKILL.md": "3182728def481c14",
+    "skills/swarm-orchestration/SKILL.md": "c3c8d4914015eb9f",
+    "skills/tdd/SKILL.md": "c6e5b6b157673e0e",
+    "skills/verification/SKILL.md": "7112a4f09c57e1b0",
+    "rules/kit/backend.md": "1ff23fccbddf6325",
+    "rules/kit/backend-nestjs.md": "55a528abc07bbf55"
+  },
+  "pi": {
+    "files": {
+      "extensions/dev-starter-kit.ts": "3caa87fb84f59898"
+    }
+  }
+}

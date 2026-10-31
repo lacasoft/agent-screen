@@ -1,0 +1,8 @@
+{
+  "skills": [
+    "../.claude/skills"
+  ],
+  "prompts": [
+    "../.claude/commands/kit/status.md"
+  ]
+}
