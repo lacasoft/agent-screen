@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Task } from '../task';
@@ -76,6 +76,23 @@ describe('SqliteTaskRepository en fichero', () => {
       expect(second.findById('t1')?.id).toBe('t1');
       second.close();
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('SqliteTaskRepository con ruta inaccesible', () => {
+  it('falla con un mensaje que nombra DATABASE_PATH y la ruta', () => {
+    // Directorio temporal de solo lectura (no /proc: en WSL mkdirSync recursivo se cuelga ahí).
+    const dir = mkdtempSync(join(tmpdir(), 'agent-screen-ro-'));
+    chmodSync(dir, 0o500);
+    const path = join(dir, 'sub', 'tasks.db');
+    try {
+      expect(() => new SqliteTaskRepository(path)).toThrow(
+        `No se puede abrir la base de datos en DATABASE_PATH="${path}" (EACCES)`,
+      );
+    } finally {
+      chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
   });

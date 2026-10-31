@@ -21,8 +21,17 @@ export class SqliteTaskRepository implements TaskRepository {
   private readonly db: DatabaseSync;
 
   constructor(path: string, migrations: readonly Migration[] = MIGRATIONS) {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
+    try {
+      if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+      this.db = new DatabaseSync(path);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? 'desconocido';
+      throw new Error(
+        `No se puede abrir la base de datos en DATABASE_PATH="${path}" (${code}). ` +
+          'En local usa una ruta escribible (por defecto ./data/agent-screen.db); en Docker, monta el volumen en /data.',
+        { cause: error },
+      );
+    }
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     migrate(this.db, migrations);
   }
