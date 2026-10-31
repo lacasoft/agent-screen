@@ -3,10 +3,8 @@ import { VncError } from './rfb-session';
 import { FakeClock, FakeSession, makeFrame } from './testing/fakes';
 import { VncDesktop } from './vnc-desktop';
 import {
-  CHANGE_WAIT_MAX_MS,
-  CHANGE_WAIT_MIN_MS,
+  CHANGE_WAIT_MS,
   CLICK_PRESS_MS,
-  LAG_FALLBACK_MS,
   STABLE_MAX_MS,
   STABLE_MS,
 } from './vnc.constants';
@@ -170,52 +168,33 @@ describe('VncDesktop', () => {
     });
   });
 
-  describe('calibrate', () => {
-    it('mide el lag moviendo el puntero a una esquina neutra', async () => {
-      // La pantalla falsa dibuja el cursor LAG ms después del primer movimiento del puntero.
-      const ref: { session?: FakeSession } = {};
-      const { session, desktop } = setup((now) => {
-        const moved = ref.session?.events.find((e) => e.kind === 'pointer');
-        return moved && now >= moved.at + LAG
-          ? makeFrame(W, H, [{ x: W - 20, y: H - 20, w: 10, h: 16 }])
-          : blank();
-      });
-      ref.session = session;
-      const r = await desktop.calibrate();
-      expect(session.events[0]).toMatchObject({
-        kind: 'pointer',
-        x: W - 20,
-        y: H - 20,
-        mask: 0,
-      });
-      expect(r.measured).toBe(true);
-      expect(r.lagMs).toBeGreaterThanOrEqual(LAG);
-      expect(r.lagMs).toBeLessThan(LAG + 300);
-      expect(desktop.lagMs).toBe(r.lagMs);
-      expect(desktop.changeWaitMs).toBe(Math.round(1.5 * r.lagMs + 500));
+  describe('espera fija de cambio (ADR-0015)', () => {
+    it('es de 8 s', () => {
+      expect(setup(blank).desktop.changeWaitMs).toBe(CHANGE_WAIT_MS);
+      expect(CHANGE_WAIT_MS).toBe(8_000);
     });
 
-    it('sin cambio observable usa el lag por defecto', async () => {
-      const { desktop } = setup(blank);
-      expect(await desktop.calibrate()).toEqual({
-        lagMs: LAG_FALLBACK_MS,
-        measured: false,
-      });
-    });
-  });
-
-  describe('changeWaitMs', () => {
-    it('acota 1,5 × lag + 0,5 s entre 1,5 s y 8 s', async () => {
-      const at = (lag: number) => {
+    it.each([800, 5_800, 7_500])(
+      'detecta un cambio que llega a los %p ms (retrasos medidos: 0,8–5,8 s)',
+      async (delay) => {
         const { desktop } = setup((now) =>
-          now >= lag ? makeFrame(W, H, [textBlock]) : blank(),
+          now >= delay ? makeFrame(W, H, [textBlock]) : blank(),
         );
-        return desktop.calibrate().then(() => desktop.changeWaitMs);
-      };
-      expect(await at(250)).toBe(CHANGE_WAIT_MIN_MS);
-      expect(await at(7_000)).toBe(CHANGE_WAIT_MAX_MS);
-      const { desktop } = setup(blank);
-      expect(desktop.changeWaitMs).toBe(1.5 * LAG_FALLBACK_MS + 500);
+        const r = await desktop.settle(await desktop.capture());
+        expect(r).toMatchObject({ changed: true, stable: true });
+        expect(r.waitedMs).toBeGreaterThanOrEqual(delay + STABLE_MS);
+      },
+    );
+
+    it('un cambio pasado el tope no se espera: changed=false sin enviar eventos', async () => {
+      const { session, desktop } = setup((now) =>
+        now >= 9_000 ? makeFrame(W, H, [textBlock]) : blank(),
+      );
+      const r = await desktop.settle(await desktop.capture());
+      expect(r.changed).toBe(false);
+      expect(r.waitedMs).toBeGreaterThanOrEqual(CHANGE_WAIT_MS);
+      expect(r.waitedMs).toBeLessThan(CHANGE_WAIT_MS + 500);
+      expect(session.events).toHaveLength(0);
     });
   });
 });

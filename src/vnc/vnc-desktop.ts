@@ -3,12 +3,9 @@ import { diffFrames, type Frame, isSignificant } from './frame';
 import { keysymForChar, parseKeyCombo, toCodePoints } from './keys';
 import { type RfbSession, VncError } from './rfb-session';
 import {
-  CALIBRATION_TIMEOUT_MS,
-  CHANGE_WAIT_MAX_MS,
-  CHANGE_WAIT_MIN_MS,
+  CHANGE_WAIT_MS,
   CLICK_PRESS_MS,
   KEY_TAP_MS,
-  LAG_FALLBACK_MS,
   POINTER_SETTLE_MS,
   POLL_MS,
   STABLE_MAX_MS,
@@ -35,19 +32,11 @@ export interface SettleResult {
   readonly waitedMs: number;
 }
 
-export interface CalibrationResult {
-  readonly lagMs: number;
-  /** false si no se observó el cambio y se usó LAG_FALLBACK_MS. */
-  readonly measured: boolean;
-}
-
 /**
  * Escritorio remoto de alto nivel: ver (capture/settle) y actuar (click/type/keys/scroll).
  * No decide nada ni reintenta acciones: eso es del agente y del Guard (ADR-0007).
  */
 export class VncDesktop {
-  private lag = LAG_FALLBACK_MS;
-
   constructor(
     private readonly session: RfbSession,
     private readonly clock: Clock = systemClock,
@@ -65,43 +54,13 @@ export class VncDesktop {
     return this.session.closed;
   }
 
-  /** Lag de pantalla vigente (ms): el calibrado o LAG_FALLBACK_MS. */
-  get lagMs(): number {
-    return this.lag;
-  }
-
-  /** Espera máxima de cambio tras una acción: clamp(1,5 × lag + 0,5 s, 1,5 s, 8 s) (ADR-0013). */
+  /** Espera máxima de un cambio tras una acción: fija, porque el retraso varía (ADR-0015). */
   get changeWaitMs(): number {
-    return Math.min(
-      CHANGE_WAIT_MAX_MS,
-      Math.max(CHANGE_WAIT_MIN_MS, Math.round(1.5 * this.lag + 500)),
-    );
+    return CHANGE_WAIT_MS;
   }
 
   capture(): Promise<Frame> {
     return this.session.captureFrame();
-  }
-
-  /**
-   * Mide el lag moviendo el puntero a una zona neutra (abajo a la derecha) y esperando
-   * a verlo en el framebuffer. Sin cambio en CALIBRATION_TIMEOUT_MS → LAG_FALLBACK_MS.
-   */
-  async calibrate(): Promise<CalibrationResult> {
-    const before = await this.capture();
-    const x = Math.max(0, this.width - 20);
-    const y = Math.max(0, this.height - 20);
-    const start = this.clock.now();
-    this.movePointer(x, y);
-    while (this.clock.now() - start < CALIBRATION_TIMEOUT_MS) {
-      await this.clock.sleep(POLL_MS);
-      const frame = await this.capture();
-      if (isSignificant(diffFrames(before, frame))) {
-        this.lag = Math.round(this.clock.now() - start);
-        return { lagMs: this.lag, measured: true };
-      }
-    }
-    this.lag = LAG_FALLBACK_MS;
-    return { lagMs: this.lag, measured: false };
   }
 
   /** Clic con pulsación de CLICK_PRESS_MS (el escritorio ignora < 100 ms). */
@@ -173,7 +132,7 @@ export class VncDesktop {
 
   /**
    * Tras una acción: espera hasta `changeWaitMs` un cambio significativo respecto a `before`
-   * y luego STABLE_MS sin cambios significativos (ADR-0013). No haber cambio no es un fallo:
+   * y luego STABLE_MS sin cambios significativos (ADR-0013, ADR-0015). No haber cambio no es un fallo:
    * el llamador vuelve a observar y nunca repite una escritura a ciegas (ADR-0007).
    */
   async settle(before: Frame): Promise<SettleResult> {
