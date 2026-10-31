@@ -1,0 +1,19 @@
+# Solo entra lo que el Dockerfile copia; nada de secretos ni artefactos locales.
+.git
+.github
+node_modules
+dist
+coverage
+data
+spikes
+test
+docs
+.claude
+.pi
+*.md
+.env
+.env.*
+!.env.example
+*.log
+*.db
+*.db-*
