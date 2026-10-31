@@ -1,4 +1,4 @@
-import type { Clock } from '../clock';
+import type { Clock } from '../../common/clock';
 import type { Frame } from '../frame';
 import type { RfbSession } from '../rfb-session';
 import { VncError } from '../rfb-session';

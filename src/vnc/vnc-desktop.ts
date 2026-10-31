@@ -1,4 +1,4 @@
-import { type Clock, systemClock } from './clock';
+import { type Clock, systemClock } from '../common/clock';
 import { diffFrames, type Frame, isSignificant } from './frame';
 import { keysymForChar, parseKeyCombo, toCodePoints } from './keys';
 import { type RfbSession, VncError } from './rfb-session';

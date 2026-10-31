@@ -10,3 +10,4 @@ export type {
 export { VncDesktop } from './vnc-desktop';
 export { VncConnector } from './vnc-connector';
 export { VncModule } from './vnc.module';
+export { encodePng, toPngDataUrl } from './png';
