@@ -49,6 +49,7 @@ const RESUMEN = {
 };
 
 interface RunStats {
+  taskId: string;
   steps: number;
   tokensIn: number;
   tokensOut: number;
@@ -88,6 +89,7 @@ export class ScreenAgent implements TaskExecutor {
     }
 
     const stats: RunStats = {
+      taskId: input.taskId,
       steps: 0,
       tokensIn: 0,
       tokensOut: 0,
@@ -124,6 +126,7 @@ export class ScreenAgent implements TaskExecutor {
     const executed: string[] = [];
     let invalid = 0;
     let blocked = 0;
+    let lastNoteStep = 0;
 
     let frame = await desktop.capture();
     convo.start(taskMessage(input.instruction, screen), toPngDataUrl(frame));
@@ -189,6 +192,7 @@ export class ScreenAgent implements TaskExecutor {
       // La nota describe la captura que el modelo acaba de ver: vale aunque la acción se bloquee.
       if ('nota' in action && action.nota) {
         notes.push(`Paso ${step}: ${action.nota}`);
+        lastNoteStep = step;
         if (notes.length > MAX_NOTES) notes.shift();
       }
 
@@ -236,8 +240,11 @@ export class ScreenAgent implements TaskExecutor {
           : 'EJECUTADA, pero NO se observó cambio en pantalla (puede ir con retraso). Observa antes de repetir nada.';
       }
       const repeats = trackRepeat(executed, signature(action));
+      // Repetir con notas nuevas es progreso (p. ej. «Siguiente» en cada página): solo se avisa
+      // si en esa racha no se anotó nada.
+      const stalled = step - lastNoteStep >= REPEAT_LIMIT;
       const warning =
-        repeats >= REPEAT_LIMIT
+        repeats >= REPEAT_LIMIT && stalled
           ? ` AVISO: has repetido esta misma acción ${repeats} veces en los últimos ${REPEAT_WINDOW} pasos. Anota lo que ves (nota) y avanza, o termina.`
           : '';
       convo.toolResult(call.id, note + warning);
@@ -262,7 +269,7 @@ export class ScreenAgent implements TaskExecutor {
       ? Math.round((100 * stats.cached) / stats.tokensIn)
       : 0;
     this.logger.log(
-      `fin ${estado} en ${stats.steps} paso(s) · ${stats.model || '—'} · tokens ${stats.tokensIn}+${stats.tokensOut} (caché ${pct} %) · coste ${stats.cost.toFixed(4)}`,
+      `tarea ${stats.taskId} fin ${estado} en ${stats.steps} paso(s) · ${stats.model || '—'} · tokens ${stats.tokensIn}+${stats.tokensOut} (caché ${pct} %) · coste ${stats.cost.toFixed(4)}`,
     );
     return { estado, resumen };
   }
