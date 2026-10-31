@@ -74,3 +74,7 @@ spikes/out/
 
 # SQLite local (DATABASE_PATH por defecto)
 /data/
+
+# Herramientas de agentes (Claude Code / Pi / dev-starter-kit): locales, NUNCA en el repo
+/.claude/
+/.pi/
