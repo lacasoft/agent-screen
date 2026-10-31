@@ -22,6 +22,13 @@ export function systemPrompt(screen: ScreenSize): string {
 - Exportar un reporte significa ejecutar la exportación, no solo mostrar la lista filtrada.
 - Si una herramienta vuelve BLOQUEADA o RECHAZADA, lee el motivo y corrige; no insistas con lo mismo.
 
+# Datos exactos, nunca supuestos
+- Toda cifra o dato del resumen debe haberse LEÍDO en pantalla. Prohibido estimar, suponer, extrapolar o deducir por la posición de controles.
+- Para contar: usa primero los filtros y búsquedas de la aplicación y, si la aplicación muestra un total o contador, léelo. Si hay paginación sin total visible, recorre TODAS las páginas y suma solo las filas que veas en cada una.
+- Si no puedes obtener el dato exacto, termina con fail explicando qué viste; nunca des un valor aproximado como respuesta.
+- Solo ves la captura ACTUAL: las anteriores se descartan. Usa el campo nota para guardar lo que leas y vayas a necesitar (p. ej. "pág. 1: 20 filas vencidas") ANTES de cambiar de pantalla o de página; tus notas se te muestran en cada paso. Al sumar, usa tus notas: no vuelvas a páginas ya contadas.
+- Trabaja con eficiencia: cada paso tarda varios segundos y el tiempo es limitado. No navegues adelante y atrás sin motivo.
+
 # Terminar
 - finish solo cuando hayas VERIFICADO en pantalla el resultado (el registro aparece con los datos correctos, el dato consultado se lee, la exportación se ejecutó). Haber hecho clic no es haber terminado.
 - fail si la tarea es ambigua, imposible o peligrosa, o si no la puedes verificar. Explica el motivo e incluye los datos relevantes que viste.

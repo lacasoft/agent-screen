@@ -143,6 +143,61 @@ describe('parseToolCall', () => {
   });
 });
 
+describe('parseToolCall: nota', () => {
+  it('acepta nota en acciones que no terminan y la conserva recortada', () => {
+    expect(
+      parse('click', {
+        x: 1,
+        y: 1,
+        intent: 'navegar',
+        reason: 'r',
+        nota: '  pág. 1: 20 filas  ',
+      }),
+    ).toMatchObject({
+      ok: true,
+      action: { type: 'click', nota: 'pág. 1: 20 filas' },
+    });
+    expect(
+      parse('wait', { ms: 500, reason: 'r', nota: 'cargando' }),
+    ).toMatchObject({ ok: true, action: { nota: 'cargando' } });
+  });
+
+  it('sin nota no añade el campo', () => {
+    const r = parse('type', { text: 'x', reason: 'r' });
+    expect(r.ok && 'nota' in r.action).toBe(false);
+  });
+
+  it('rechaza nota en finish/fail, vacía o demasiado larga', () => {
+    expect(parse('finish', { resumen: 'ok', nota: 'x' }).ok).toBe(false);
+    expect(
+      parse('click', { x: 1, y: 1, intent: 'navegar', reason: 'r', nota: '' })
+        .ok,
+    ).toBe(false);
+    expect(
+      parse('click', {
+        x: 1,
+        y: 1,
+        intent: 'navegar',
+        reason: 'r',
+        nota: 'x'.repeat(201),
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('todas las herramientas que no terminan ofrecen nota', () => {
+    const withNote = actionTools(screen).filter(
+      (t) => 'nota' in (t.function.parameters.properties as object),
+    );
+    expect(withNote.map((t) => t.function.name)).toEqual([
+      'click',
+      'type',
+      'key',
+      'scroll',
+      'wait',
+    ]);
+  });
+});
+
 describe('actionTools', () => {
   it('expone las 7 acciones con esquemas cerrados y límites de pantalla', () => {
     const tools = actionTools(screen);

@@ -371,3 +371,49 @@ describe('ScreenAgent', () => {
     expect(toolResults()[0]).toMatch(/^BLOQUEADA: el resumen/);
   });
 });
+
+describe('ScreenAgent: notas y bucles (E3 en vivo)', () => {
+  const nav = (x: number, nota?: string) =>
+    reply([
+      call('click', {
+        x,
+        y: 10,
+        intent: 'navegar',
+        reason: 'página',
+        ...(nota ? { nota } : {}),
+      }),
+    ]);
+
+  it('acumula las notas y las muestra en cada captura siguiente', async () => {
+    const { run, requests } = setup([
+      nav(10, 'pág. 1: 20 filas'),
+      nav(20, 'pág. 2: 20 filas'),
+      reply([
+        call('finish', {
+          resumen:
+            'respuesta: 45\npág. 1: 20 + pág. 2: 20 + pág. 3: 5, todas vistas.',
+        }),
+      ]),
+    ]);
+    expect((await run()).estado).toBe('terminada');
+    const lastUser = JSON.stringify(requests[2].messages.at(-1));
+    expect(lastUser).toContain('Tus notas hasta ahora');
+    expect(lastUser).toContain('Paso 1: pág. 1: 20 filas');
+    expect(lastUser).toContain('Paso 2: pág. 2: 20 filas');
+  });
+
+  it('avisa al repetir la misma acción 3 veces en 6 pasos', async () => {
+    const { run, toolResults } = setup([
+      nav(10),
+      nav(10),
+      nav(10),
+      reply([call('fail', { resumen: 'No pude contar.' })]),
+    ]);
+    await run();
+    const results = toolResults();
+    expect(results[1]).not.toContain('AVISO');
+    expect(results[2]).toContain(
+      'AVISO: has repetido esta misma acción 3 veces',
+    );
+  });
+});

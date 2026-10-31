@@ -3,6 +3,7 @@ export type {
   AgentActionType,
   CommitInfo,
   Intent,
+  NoteInfo,
   ParseResult,
   ScreenSize,
   ToolDefinition,

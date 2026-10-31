@@ -1,7 +1,8 @@
 import type { ToolDefinition } from './actions';
 
+/** `cache_control` marca un punto de caché de prompt (Anthropic vía OpenRouter); otros lo ignoran. */
 export type ChatContentPart =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
   | { type: 'image_url'; image_url: { url: string } };
 
 export interface ToolCall {
@@ -11,7 +12,7 @@ export interface ToolCall {
 }
 
 export type ChatMessage =
-  | { role: 'system'; content: string }
+  | { role: 'system'; content: string | ChatContentPart[] }
   | { role: 'user'; content: string | ChatContentPart[] }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
@@ -28,6 +29,8 @@ export interface ChatRequest {
 export interface ChatUsage {
   readonly promptTokens: number;
   readonly completionTokens: number;
+  /** Tokens de entrada servidos desde la caché de prompt, si el proveedor lo informa. */
+  readonly cachedTokens?: number;
   /** Coste en créditos de OpenRouter, si lo informa. */
   readonly cost?: number;
 }
