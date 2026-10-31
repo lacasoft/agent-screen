@@ -24,7 +24,8 @@ export const envValidationSchema = Joi.object({
   OPENROUTER_API_KEY: Joi.string().required(),
   LLM_MODEL: Joi.string().required(),
   LLM_FALLBACK_MODELS: Joi.string().allow('').optional(),
-  DATABASE_PATH: Joi.string().default('/data/agent-screen.db'),
+  // Local: ./data (gitignored). En Docker se fija DATABASE_PATH=/data/agent-screen.db (volumen).
+  DATABASE_PATH: Joi.string().default('./data/agent-screen.db'),
 });
 
 /** Niveles de Nest activos para un LOG_LEVEL ('info' equivale a 'log' de Nest). */

@@ -117,7 +117,7 @@ Confirmados el 2026-10-31 con Node 24.22.2 (`.nvmrc`; `engines` ≥ 24.9):
 Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 
 - **Fail-fast:** `AGENT_API_TOKEN` (Bearer de `/tasks*`), `OPENROUTER_API_KEY` y `LLM_MODEL`. Opcional: `LLM_FALLBACK_MODELS`.
-- **Con valor por defecto:** `PORT` (3000), `DATABASE_PATH` (`/data/agent-screen.db` en Docker), `LOG_LEVEL` (`error|warn|info|debug|verbose`, info) y `NODE_ENV` (solo `test` cambia algo: ignora `.env`).
+- **Con valor por defecto:** `PORT` (3000), `DATABASE_PATH` (`./data/agent-screen.db`; en Docker se fija `/data/agent-screen.db`), `LOG_LEVEL` (`error|warn|info|debug|verbose`, info) y `NODE_ENV` (solo `test` cambia algo: ignora `.env`).
 - La URL y la contraseña del escritorio **no** van en env: llegan en cada solicitud. Excepción: `DESKTOP_URL`, `DESKTOP_PASSWORD` y `DESKTOP_TOKEN` (práctica) existen solo para `spikes/`, y `src/` **nunca** las lee. Los plazos son constantes de código (ADR-0012), no env.
 
 ## Testing

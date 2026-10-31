@@ -12,7 +12,7 @@ describe('envValidationSchema', () => {
     expect(error).toBeUndefined();
     expect(value).toMatchObject({
       PORT: 3000,
-      DATABASE_PATH: '/data/agent-screen.db',
+      DATABASE_PATH: './data/agent-screen.db',
       NODE_ENV: 'development',
     });
   });
