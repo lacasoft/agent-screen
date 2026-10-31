@@ -137,11 +137,12 @@ Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 ## Notas / gotchas
 
 - **Node ≥ 24.9 obligatorio** (`nvm use`): con Node 22, Jest no carga Nest 12 (ESM) y falla con "Must use import to load ES Module". El `default` de nvm en esta máquina sigue apuntando a 22.
-- `nest build` deja la salida en `dist/main.js` (no en `dist/src/`).
+- `nest build` deja la salida en `dist/` sin `src/` (`dist/main.js`, `dist/vnc/…`). `npm run test:live`: tests contra el escritorio real (solo lectura, lee `.env`).
 - `AGENTS.md` sugiere NestJS Observe. No forma parte del diseño: no lo añadas sin decidirlo, y nunca envíes capturas ni secretos a telemetría.
 - **Spike `rfb2` superado (2026-10-31, `spikes/rfb2-spike.mjs`).** WSS + VNC auth listos en ~1,1 s; 1280×800, ZRLE; clic de 150 ms, `Ctrl+A` (reemplaza) y tecleo funcionan. Trampas medidas:
   - La 1.ª update puede traer solo `extendedDesktopSize`: espera una con rects `pixels` o `copy`.
-  - Retraso de **~3,4 s** hasta ver el cambio (no 1 s). El cursor del ratón va dibujado en el framebuffer.
+  - Retraso **variable** hasta ver un cambio: 0,8–5,8 s en 6 muestras (no 1 s). El cursor va dibujado en el framebuffer.
+  - La autenticación VNC (DES) solo usa los **8 primeros caracteres** de la contraseña.
   - El caret parpadea (1×13 px cada ~0,4–0,8 s): «dos capturas iguales» nunca se cumple; ignora cambios diminutos. La fecha de la app está en la cabecera («Hoy: dd/mm/aaaa»).
 - `/health` abierto y 409 por escritorio ocupado son decisiones posteriores al `design.md`: aquí mandan estas, no el diseño.
 
