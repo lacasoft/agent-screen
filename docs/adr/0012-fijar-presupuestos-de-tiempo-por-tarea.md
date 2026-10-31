@@ -1,6 +1,6 @@
 # ADR-0012: Fijar los presupuestos de tiempo de cada tarea
 
-- Estado: Aceptado
+- Estado: Aceptado · estabilización y umbral de escrituras reemplazados por ADR-0013
 - Fecha: 2026-10-31
 - Decisores: equipo agent-screen
 

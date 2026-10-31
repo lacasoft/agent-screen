@@ -1,0 +1,20 @@
+# Local / despliegue de una instancia: docker compose up --build
+services:
+  agent-screen:
+    build: .
+    image: agent-screen:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    # Fail-fast si faltan AGENT_API_TOKEN, OPENROUTER_API_KEY o LLM_MODEL (ver .env.example).
+    env_file: .env
+    environment:
+      PORT: "3000"
+      DATABASE_PATH: /data/agent-screen.db
+    volumes:
+      - agent-data:/data
+    stop_grace_period: 10s
+
+volumes:
+  agent-data:
