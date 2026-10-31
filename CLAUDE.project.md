@@ -71,7 +71,7 @@ Agente que recibe tareas en lenguaje natural y opera aplicaciones legacy **desco
 ## Atributos de calidad
 
 - `POST /tasks` < 2 s (medido: 17 ms) · tarea cerrada < 300 s (presupuesto 270 s) · `/health` 200 cuando está listo.
-- Medido en E3 en vivo: 55 s, 13 pasos, 0,108 créditos, 57 % de tokens desde caché.
+- **E1–E5 en vivo (2026-10-31, `claude-sonnet-5.5`): 5/5 aprobados** (`__check` + criterios del agente). 45–80 s y 9–19 pasos por tarea; 0,54 créditos en total (0,06–0,16 por tarea); 56–64 % de los tokens desde caché.
 - Carga: el evaluador consulta cada 5 s; techo ≈ 12 tareas/h por escritorio. Sin objetivos de disponibilidad ni de coste: medir con E1–E5.
 
 ## Integraciones externas
@@ -107,7 +107,7 @@ Documentadas en `.env.example`; validadas al boot con Joi.
 
 - Unit junto al código (London: VNC, LLM y reloj simulados) · e2e con la app completa · live contra el escritorio y OpenRouter. Sin umbral de cobertura.
 - Regresión obligatoria: watchdog a 270 s y nada tras el abort; no reintentar una escritura si el registro aparece; homónimos (`coincidencias = 1`); destructivas no pedidas; escrituras con < 40 s; suposiciones en `finish`; caret ignorado al estabilizar; redacción de contraseña y token; formato `respuesta:`; `/health` sin token; 401; 409; `en_curso` → `fallida` al reiniciar.
-- Aceptación E1–E5: `__reset` → `POST /tasks` → poll cada 5 s → `__check`. Registrar diff, cambios extra, duplicados, estado, resumen, tiempo y coste.
+- Aceptación E1–E5: `node spikes/run-case.mjs e1-e5/E<n>-….json <puerto>` (hace `__reset` → `POST /tasks` → poll cada 5 s → `__check` → criterios del agente). Los JSON viven en `e1-e5/` (local, ignorado por git).
 
 ## Decisiones de arquitectura
 
@@ -124,5 +124,5 @@ Documentadas en `.env.example`; validadas al boot con Joi.
 
 ## Pendiente de confirmar
 
-- Modelo definitivo: elegirlo tras medir con E1–E5 el acierto, el p95 por llamada y el coste por tarea.
-- E1, E2, E4 y E5 (escrituras, exportación, homónimos) aún sin probar en vivo.
+- Modelo: `claude-sonnet-5.5` aprueba E1–E5 con una ejecución por caso. Falta medir la variabilidad (varias ejecuciones) y comparar con algún candidato más barato.
+- La app de evaluación es otra: E1–E5 no garantizan generalizar.

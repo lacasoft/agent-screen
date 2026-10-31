@@ -416,4 +416,19 @@ describe('ScreenAgent: notas y bucles (E3 en vivo)', () => {
       'AVISO: has repetido esta misma acción 3 veces',
     );
   });
+
+  it('no avisa si la acción repetida va con notas nuevas (paginación legítima, E3)', async () => {
+    const { run, toolResults } = setup([
+      nav(10, 'pág. 1: 12'),
+      nav(10, 'pág. 2: 13'),
+      nav(10, 'pág. 3: 15'),
+      reply([
+        call('finish', {
+          resumen: 'respuesta: 45\n12 + 13 + 15 + 5, todas vistas.',
+        }),
+      ]),
+    ]);
+    await run();
+    expect(toolResults().some((r) => r.includes('AVISO'))).toBe(false);
+  });
 });
