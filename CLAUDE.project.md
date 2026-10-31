@@ -26,14 +26,14 @@ Agente que recibe tareas en lenguaje natural y opera aplicaciones legacy **desco
 
 ## Estructura del repositorio
 
-Hechos: `tasks`, `vnc`, `llm`, `common`, `config`, `health`. Vacío: `agent`.
+Todos los módulos implementados: `tasks`, `agent`, `vnc`, `llm`, `common`, `config`, `health`.
 
-- `src/tasks/`: `POST/GET /tasks`, `TasksService` (lease → 409), `TaskRunner` (watchdog 270 s, redacción, persistir → liberar lease), `TaskRepository` → `sqlite/` (`node:sqlite`, migraciones). Puerto `TaskExecutor` (token `TASK_EXECUTOR`): hoy `UnavailableAgentExecutor`; lo sustituirá el agente.
+- `src/tasks/`: `POST/GET /tasks`, `TasksService` (lease → 409), `TaskRunner` (watchdog 270 s, redacción, persistir → liberar lease), `TaskRepository` → `sqlite/` (`node:sqlite`, migraciones). Puerto `TaskExecutor` (token `TASK_EXECUTOR`) → `ScreenAgent`.
 - `src/vnc/`: `VncConnector` → `VncDesktop` (click/type/keys/scroll/settle) sobre `RfbSession` (`rfb2-session.ts`).
 - `src/common/`: `BearerAuthGuard` (global, `@Public()`), `ApiExceptionFilter` (`{code,message,details?}`), `ValidationPipe`, `redactSecrets`.
 - `src/config/`: esquema Joi del env. `src/health/`: `GET /health` abierto.
 - `src/llm/`: puerto `LlmClient` (token `LLM_CLIENT`) → `OpenRouterClient` (fetch, timeout/reintento ADR-0012, respaldo `models`); `actions.ts`: 7 herramientas + `parseToolCall` (valida forma, no política). PNG en `src/vnc/png.ts`.
-- `src/agent/`: bucle observar → decidir → actuar → verificar, `Guard`.
+- `src/agent/`: `ScreenAgent` (bucle observar → LLM → `Guard` → VNC → settle), `guard.ts` (política pura: destructivas, < 40 s, `coincidencias = 1`, sin reintento ciego, formato del resumen; se basa en el `intent` que declara el modelo + `reason`), `prompt.ts` (genérico, sin SIGECOM), `conversation.ts` (solo la última captura).
 - `test/`: e2e (`*.e2e-spec.ts`, env en `e2e-env.ts`) y live (`*.live-spec.ts`). Unit tests junto al código (`*.spec.ts`).
 
 ## Arquitectura

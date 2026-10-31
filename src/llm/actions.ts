@@ -2,17 +2,44 @@
  * Acciones que el modelo puede proponer, como herramientas (tool calling). Aquí se valida
  * la FORMA (tipos, rangos, pantalla); la POLÍTICA (destructivas, plazo, homónimos) es del Guard.
  */
+
+/** Efecto que el modelo declara para click/key; el Guard decide con él (y con `reason`). */
+export const INTENTS = [
+  'navegar',
+  'escribir',
+  'confirmar',
+  'exportar',
+  'eliminar',
+] as const;
+export type Intent = (typeof INTENTS)[number];
+
+/** Datos de una confirmación (guardar/aceptar/enviar) o exportación. */
+export interface CommitInfo {
+  /** Registro que se crea (`nuevo`) o que se modifica (`existente`). */
+  readonly registro?: 'nuevo' | 'existente';
+  /** Cuántos registros coinciden con la identificación de la instrucción (edición). */
+  readonly coincidencias?: number;
+  /** true solo si se verificó que la confirmación anterior NO surtió efecto. */
+  readonly reintento?: boolean;
+}
+
 export type AgentAction =
-  | {
+  | ({
       type: 'click';
       x: number;
       y: number;
       button: 'left' | 'right' | 'middle';
       double: boolean;
+      intent: Intent;
       reason: string;
-    }
+    } & CommitInfo)
   | { type: 'type'; text: string; replace: boolean; reason: string }
-  | { type: 'key'; combo: string; reason: string }
+  | ({
+      type: 'key';
+      combo: string;
+      intent: Intent;
+      reason: string;
+    } & CommitInfo)
   | {
       type: 'scroll';
       x: number;
@@ -52,6 +79,33 @@ const reason = {
   description: 'Por qué esta acción, en una frase.',
   maxLength: MAX_REASON,
 };
+const intent = {
+  type: 'string',
+  enum: INTENTS,
+  description:
+    'Efecto: navegar (menús, pestañas, abrir, filtrar, buscar), escribir (dar foco a un campo), ' +
+    'confirmar (guardar/aceptar/enviar: persiste), exportar (genera el reporte), eliminar (borrar/anular/vaciar).',
+};
+const commit = {
+  registro: {
+    type: 'string',
+    enum: ['nuevo', 'existente'],
+    description:
+      'Solo en confirmar/exportar: registro que se crea o que se modifica.',
+  },
+  coincidencias: {
+    type: 'integer',
+    minimum: 0,
+    maximum: 1000,
+    description:
+      'Solo al confirmar un registro existente: cuántos registros coinciden con la identificación de la tarea.',
+  },
+  reintento: {
+    type: 'boolean',
+    description:
+      'true solo si comprobaste en pantalla que la confirmación anterior NO surtió efecto.',
+  },
+};
 
 /** Herramientas para la API (JSON Schema). Las coordenadas son píxeles de la captura. */
 export function actionTools(screen: ScreenSize): ToolDefinition[] {
@@ -87,9 +141,11 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
             default: 'left',
           },
           double: { type: 'boolean', default: false },
+          intent,
+          ...commit,
           reason,
         },
-        ['x', 'y', 'reason'],
+        ['x', 'y', 'intent', 'reason'],
       ),
     ),
     tool(
@@ -110,9 +166,11 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
       obj(
         {
           combo: { type: 'string', minLength: 1, maxLength: 40 },
+          intent,
+          ...commit,
           reason,
         },
-        ['combo', 'reason'],
+        ['combo', 'intent', 'reason'],
       ),
     ),
     tool(
@@ -144,9 +202,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
       'finish',
       'La tarea está completa y VERIFICADA en pantalla. resumen sigue el formato exigido.',
       obj(
-        {
-          resumen: { type: 'string', minLength: 1, maxLength: MAX_RESUMEN },
-        },
+        { resumen: { type: 'string', minLength: 1, maxLength: MAX_RESUMEN } },
         ['resumen'],
       ),
     ),
@@ -154,9 +210,7 @@ export function actionTools(screen: ScreenSize): ToolDefinition[] {
       'fail',
       'La tarea no puede o no debe hacerse (ambigua, imposible, peligrosa). Explica con los datos relevantes.',
       obj(
-        {
-          resumen: { type: 'string', minLength: 1, maxLength: MAX_RESUMEN },
-        },
+        { resumen: { type: 'string', minLength: 1, maxLength: MAX_RESUMEN } },
         ['resumen'],
       ),
     ),
@@ -196,7 +250,15 @@ export function parseToolCall(
   try {
     switch (name) {
       case 'click':
-        only(a, ['x', 'y', 'button', 'double', 'reason']);
+        only(a, [
+          'x',
+          'y',
+          'button',
+          'double',
+          'intent',
+          ...COMMIT_FIELDS,
+          'reason',
+        ]);
         return ok({
           type: 'click',
           x: int(a.x, 'x', 0, screen.width - 1),
@@ -207,6 +269,8 @@ export function parseToolCall(
             'middle',
           ] as const),
           double: bool(a.double ?? false, 'double'),
+          intent: oneOf(a.intent, 'intent', INTENTS),
+          ...commitInfo(a),
           reason: str(a.reason, 'reason', 1, MAX_REASON),
         });
       case 'type':
@@ -218,10 +282,12 @@ export function parseToolCall(
           reason: str(a.reason, 'reason', 1, MAX_REASON),
         });
       case 'key':
-        only(a, ['combo', 'reason']);
+        only(a, ['combo', 'intent', ...COMMIT_FIELDS, 'reason']);
         return ok({
           type: 'key',
           combo: str(a.combo, 'combo', 1, 40),
+          intent: oneOf(a.intent, 'intent', INTENTS),
+          ...commitInfo(a),
           reason: str(a.reason, 'reason', 1, MAX_REASON),
         });
       case 'scroll':
@@ -258,6 +324,27 @@ export function parseToolCall(
 
 const ok = (action: AgentAction): ParseResult => ({ ok: true, action });
 
+const COMMIT_FIELDS = ['registro', 'coincidencias', 'reintento'];
+
+function commitInfo(a: Record<string, unknown>): CommitInfo {
+  const info: {
+    registro?: 'nuevo' | 'existente';
+    coincidencias?: number;
+    reintento?: boolean;
+  } = {};
+  if (a.registro !== undefined) {
+    info.registro = oneOf(a.registro, 'registro', [
+      'nuevo',
+      'existente',
+    ] as const);
+  }
+  if (a.coincidencias !== undefined)
+    info.coincidencias = int(a.coincidencias, 'coincidencias', 0, 1000);
+  if (a.reintento !== undefined)
+    info.reintento = bool(a.reintento, 'reintento');
+  return info;
+}
+
 function only(a: Record<string, unknown>, allowed: string[]): void {
   const extra = Object.keys(a).filter((k) => !allowed.includes(k));
   if (extra.length)
@@ -275,8 +362,9 @@ function int(v: unknown, field: string, min: number, max: number): number {
 function str(v: unknown, field: string, min: number, max: number): string {
   if (typeof v !== 'string') throw new Error(`${field} debe ser texto`);
   const t = field === 'text' ? v : v.trim(); // el texto a escribir se respeta literal
-  if (t.length < min || t.length > max)
+  if (t.length < min || t.length > max) {
     throw new Error(`${field} con longitud fuera de [${min}, ${max}]`);
+  }
   return t;
 }
 

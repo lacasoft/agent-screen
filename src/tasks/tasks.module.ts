@@ -1,15 +1,17 @@
 import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AgentModule } from '../agent/agent.module';
 import { DesktopLeases } from './desktop-lease';
 import { SqliteTaskRepository } from './sqlite/sqlite-task.repository';
-import { UnavailableAgentExecutor } from './task-executor';
 import { TaskRunner } from './task-runner';
 import type { TaskRepository } from './task.repository';
-import { TASK_EXECUTOR, TASK_REPOSITORY } from './tasks.constants';
+import { TASK_REPOSITORY } from './tasks.constants';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
 @Module({
+  // El agente (AgentModule) aporta el TaskExecutor real.
+  imports: [AgentModule],
   controllers: [TasksController],
   providers: [
     {
@@ -18,8 +20,6 @@ import { TasksService } from './tasks.service';
       useFactory: (config: ConfigService) =>
         new SqliteTaskRepository(config.getOrThrow<string>('DATABASE_PATH')),
     },
-    // Provisional: el AgentModule lo sustituirá por el agente real.
-    { provide: TASK_EXECUTOR, useClass: UnavailableAgentExecutor },
     DesktopLeases,
     TaskRunner,
     TasksService,
