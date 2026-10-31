@@ -21,19 +21,19 @@ Agente que recibe tareas en lenguaje natural y opera aplicaciones legacy **desco
 - Node.js + TypeScript 6 (`module: nodenext`, `strict`), NestJS 12 (ESM) sobre Express. npm, sin monorepo.
 - Lint: **oxlint** `--type-aware` (`.oxlintrc.json`: `no-floating-promises` = error). Formato: **Prettier** (comillas simples, trailing commas). No hay ESLint.
 - Tests: Jest 30 + ts-jest + supertest.
-- Decidido, aún sin instalar: `rfb2` + `ws` (ADR-0002), LLM multimodal vía OpenRouter (ADR-0003), SQLite con `better-sqlite3` (ADR-0011). Node objetivo: **24 (≥ 24.9)**.
+- Decidido, aún sin instalar: `rfb2` + `ws` (ADR-0002), LLM multimodal vía OpenRouter (ADR-0003), SQLite con `node:sqlite` (ADR-0011, ADR-0014). Node objetivo: **24 (≥ 24.9)**.
 - ⚠️ El overlay del kit habla de TypeORM/PostgreSQL/Redis/BullMQ. **Aquí no se usan** (ADR-0011): SQLite y una sola instancia. No metas ORM, Postgres, Redis ni BullMQ sin un ADR nuevo.
 
 ## Estructura del repositorio
 
-Esqueleto recién generado: los módulos existen vacíos.
+Hechos: `tasks`, `vnc`, `common`, `config`, `health`. Vacíos: `agent`, `llm`.
 
-- `src/tasks/`: API HTTP (`/health`, `/tasks`), estado de tareas (`TaskRepository` → SQLite) y gestor de ejecución.
-- `src/agent/`: bucle observar → decidir → actuar → verificar, `Guard`, watchdog.
-- `src/vnc/`: adaptador WebSocket + RFB (capturas, ratón, teclado).
-- `src/llm/`: cliente del modelo multimodal.
-- `src/app.*`: scaffold de Nest (`GET /` → "Hello World!"). Se sustituye por `/health`.
-- `test/`: e2e (`*.e2e-spec.ts`). Los unit tests van junto al código (`*.spec.ts`).
+- `src/tasks/`: `POST/GET /tasks`, `TasksService` (lease → 409), `TaskRunner` (watchdog 270 s, redacción, persistir → liberar lease), `TaskRepository` → `sqlite/` (`node:sqlite`, migraciones). Puerto `TaskExecutor` (token `TASK_EXECUTOR`): hoy `UnavailableAgentExecutor`; lo sustituirá el agente.
+- `src/vnc/`: `VncConnector` → `VncDesktop` (click/type/keys/scroll/settle) sobre `RfbSession` (`rfb2-session.ts`).
+- `src/common/`: `BearerAuthGuard` (global, `@Public()`), `ApiExceptionFilter` (`{code,message,details?}`), `ValidationPipe`, `redactSecrets`.
+- `src/config/`: esquema Joi del env. `src/health/`: `GET /health` abierto.
+- `src/agent/`: bucle observar → decidir → actuar → verificar, `Guard`. `src/llm/`: cliente OpenRouter.
+- `test/`: e2e (`*.e2e-spec.ts`, env en `e2e-env.ts`) y live (`*.live-spec.ts`). Unit tests junto al código (`*.spec.ts`).
 
 ## Arquitectura
 
@@ -49,7 +49,7 @@ Flujo (diagrama en `../system-design-agent-screen/architecture.md`):
 **Contratos** (literales; no cambiar nombres ni forma):
 
 - `GET /health` → 200 cuando está listo. **Abierto**: no exige Bearer, pero lo acepta si llega.
-- `POST /tasks` `{tarea, escritorio:{url,password}}` → `{"task_id":"…"}` en < 2 s. Si el escritorio ya tiene una tarea activa → **409** `{code:"DESKTOP_BUSY", message}`, sin crear tarea (ADR-0005).
+- `POST /tasks` `{tarea, escritorio:{url,password}}` → **200** `{"task_id":"…"}` en < 2 s. Si el escritorio ya tiene una tarea activa → **409** `{code:"DESKTOP_BUSY", message}`, sin crear tarea (ADR-0005).
 - `GET /tasks/{id}` → `{"estado","resumen"}`; 404 si no existe.
 - `/tasks*` exige `Authorization: Bearer` (401 si falta o no coincide). Los errores van con el envelope `{code, message}`; el éxito, con el formato literal de arriba. Sin `Idempotency-Key`: dos POST iguales son dos tareas (la segunda recibe 409 mientras la primera siga activa).
 
@@ -104,11 +104,11 @@ Confirmados el 2026-10-31 con Node 24.22.2 (`.nvmrc`; `engines` ≥ 24.9):
 
 - `npm run build` ✅ · `npm run lint` ✅ · `npx prettier --check "src/**/*.ts" "test/**/*.ts"` ✅
 - `npm run start:dev` · `npm run start:prod` (`node dist/main`) ✅, `PORT` por defecto 3000.
-- `npm test` ✅ · `npm run test:e2e` ✅ · `npm run test:cov`. Avisan de `--experimental-vm-modules` (ExperimentalWarning): es inofensivo.
+- `npm test` ✅ · `npm run test:e2e` ✅ · `npm run test:live` (escritorio real) · `npm run test:cov`. Avisan de `--experimental-vm-modules` (ExperimentalWarning): es inofensivo.
 
 ## Despliegue / infraestructura
 
-- **Docker**, una sola instancia y servicio público. Imagen `node:24-slim` (glibc, por el binario nativo de `better-sqlite3`), con un volumen nombrado montado en `/data` para la BD (ADR-0011). Healthcheck del contenedor contra `GET /health`.
+- **Docker**, una sola instancia y servicio público. Imagen `node:24-slim` (sin dependencias nativas, ADR-0014), con un volumen nombrado montado en `/data` para la BD (ADR-0011). Healthcheck del contenedor contra `GET /health`.
 - No hay Dockerfile ni CI todavía.
 - El script `deploy` (`nest deploy`, Mau/AWS) viene del scaffold: no se usa.
 
@@ -117,7 +117,7 @@ Confirmados el 2026-10-31 con Node 24.22.2 (`.nvmrc`; `engines` ≥ 24.9):
 Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 
 - **Fail-fast:** `AGENT_API_TOKEN` (Bearer de `/tasks*`), `OPENROUTER_API_KEY` y `LLM_MODEL`. Opcional: `LLM_FALLBACK_MODELS`.
-- **Con valor por defecto:** `PORT` (3000), `DATABASE_PATH` (`/data/agent-screen.db` en Docker), `LOG_LEVEL` (info) y `NODE_ENV`.
+- **Con valor por defecto:** `PORT` (3000), `DATABASE_PATH` (`/data/agent-screen.db` en Docker), `LOG_LEVEL` (`error|warn|info|debug|verbose`, info) y `NODE_ENV` (solo `test` cambia algo: ignora `.env`).
 - La URL y la contraseña del escritorio **no** van en env: llegan en cada solicitud. Excepción: `DESKTOP_URL`, `DESKTOP_PASSWORD` y `DESKTOP_TOKEN` (práctica) existen solo para `spikes/`, y `src/` **nunca** las lee. Los plazos son constantes de código (ADR-0012), no env.
 
 ## Testing
@@ -132,20 +132,20 @@ Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 - LLM decide, código propio ejecuta, sin memoria entre tareas → `0003` · API asíncrona + worker cancelable → `0004`
 - Una tarea por escritorio → `0005` · Watchdog 270 s → `0006` · Escrituras verificadas sin reintentos ciegos → `0007`
 - `Guard` anti-destructivas → `0008` · Bloqueo de homónimos → `0009` · Redactor de secretos + Bearer en tiempo constante → `0010`
-- SQLite (`better-sqlite3`, WAL) en volumen Docker; lease en memoria → `0011` · Presupuestos de tiempo (LLM 25 s, conexión 10 s) → `0012` · Estabilización con lag calibrado y escrituras ≥ 40 s → `0013`
+- SQLite (WAL) en volumen Docker; lease en memoria → `0011` · Driver `node:sqlite` → `0014` · Presupuestos de tiempo (LLM 25 s, conexión 10 s) → `0012` · Estabilización con lag calibrado y escrituras ≥ 40 s → `0013`
 
 ## Notas / gotchas
 
 - **Node ≥ 24.9 obligatorio** (`nvm use`): con Node 22, Jest no carga Nest 12 (ESM) y falla con "Must use import to load ES Module". El `default` de nvm en esta máquina sigue apuntando a 22.
-- `nest build` deja la salida en `dist/` sin `src/` (`dist/main.js`, `dist/vnc/…`). `npm run test:live`: tests contra el escritorio real (solo lectura, lee `.env`).
+- `nest build` deja la salida en `dist/` sin `src/` (`dist/main.js`, `dist/vnc/…`). `test:live` es solo lectura y lee `.env` aparte (Jest copia `process.env`).
 - `AGENTS.md` sugiere NestJS Observe. No forma parte del diseño: no lo añadas sin decidirlo, y nunca envíes capturas ni secretos a telemetría.
 - **Spike `rfb2` superado (2026-10-31, `spikes/rfb2-spike.mjs`).** WSS + VNC auth listos en ~1,1 s; 1280×800, ZRLE; clic de 150 ms, `Ctrl+A` (reemplaza) y tecleo funcionan. Trampas medidas:
   - La 1.ª update puede traer solo `extendedDesktopSize`: espera una con rects `pixels` o `copy`.
   - Retraso **variable** hasta ver un cambio: 0,8–5,8 s en 6 muestras (no 1 s). El cursor va dibujado en el framebuffer.
   - La autenticación VNC (DES) solo usa los **8 primeros caracteres** de la contraseña.
   - El caret parpadea (1×13 px cada ~0,4–0,8 s): «dos capturas iguales» nunca se cumple; ignora cambios diminutos. La fecha de la app está en la cabecera («Hoy: dd/mm/aaaa»).
-- `/health` abierto y 409 por escritorio ocupado son decisiones posteriores al `design.md`: aquí mandan estas, no el diseño.
 
 ## Pendiente de confirmar
 
 - Modelo definitivo: elegirlo tras medir con E1–E5 el acierto, el p95 por llamada y el coste por tarea.
+- **Backlog:** ADR-0015 (retraso variable 0,8–5,8 s → quitar la calibración y esperar cambio con tope fijo de 8 s) y simplificar `VncDesktop` en consecuencia.

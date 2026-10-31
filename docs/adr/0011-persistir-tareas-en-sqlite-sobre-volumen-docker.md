@@ -1,6 +1,6 @@
 # ADR-0011: Persistir el estado de las tareas en SQLite sobre un volumen Docker
 
-- Estado: Aceptado
+- Estado: Aceptado · driver reemplazado por ADR-0014 (`node:sqlite`)
 - Fecha: 2026-10-31
 - Decisores: equipo agent-screen
 
