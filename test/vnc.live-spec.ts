@@ -18,7 +18,7 @@ live('VNC en vivo (escritorio de práctica)', () => {
     desktop = undefined;
   });
 
-  it('conecta, captura con píxeles y calibra el lag', async () => {
+  it('conecta, captura con píxeles y settle sin acción no ve cambios', async () => {
     const t0 = performance.now();
     desktop = new VncDesktop(await openRfb2Session({ url, password }));
     const connectMs = Math.round(performance.now() - t0);
@@ -28,13 +28,11 @@ live('VNC en vivo (escritorio de práctica)', () => {
     const lit = frame.rgba.some((v, i) => i % 4 !== 3 && v !== 0);
     expect(lit).toBe(true);
 
-    const cal = await desktop.calibrate();
     console.log(
-      `conexión ${connectMs} ms · ${frame.width}×${frame.height} · lag ${cal.lagMs} ms (medido: ${cal.measured}) · espera de cambio ${desktop.changeWaitMs} ms`,
+      `conexión ${connectMs} ms · ${frame.width}×${frame.height} · espera de cambio ${desktop.changeWaitMs} ms`,
     );
-    expect(cal.lagMs).toBeGreaterThan(0);
 
-    // Tras calibrar, sin acciones: settle no debe ver cambios (el caret no cuenta).
+    // Sin acciones: settle no debe ver cambios (el caret no cuenta).
     const before = await desktop.capture();
     const r = await desktop.settle(before);
     console.log(`settle sin acción: changed=${r.changed} en ${r.waitedMs} ms`);

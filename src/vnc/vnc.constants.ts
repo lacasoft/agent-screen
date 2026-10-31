@@ -21,13 +21,8 @@ export const STABLE_MS = 1_200;
 /** Máximo de la fase de estabilización, tras el primer cambio. */
 export const STABLE_MAX_MS = 5_000;
 
-/** Lag supuesto si la calibración no da resultado (ADR-0013). */
-export const LAG_FALLBACK_MS = 3_500;
-/** Máximo de la calibración del lag. */
-export const CALIBRATION_TIMEOUT_MS = 8_000;
-/** Espera de cambio = clamp(1,5 × lag + 0,5 s, MIN, MAX) (ADR-0013). */
-export const CHANGE_WAIT_MIN_MS = 1_500;
-export const CHANGE_WAIT_MAX_MS = 8_000;
+/** Espera máxima de un cambio significativo tras una acción: retraso medido 0,8–5,8 s (ADR-0015). */
+export const CHANGE_WAIT_MS = 8_000;
 
 /** Cambio significativo: más de N píxeles y caja con ambos lados > 2 px (ADR-0013). */
 export const SIGNIFICANT_MIN_PIXELS = 50;

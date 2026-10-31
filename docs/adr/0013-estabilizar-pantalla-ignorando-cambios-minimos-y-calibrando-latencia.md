@@ -1,6 +1,6 @@
 # ADR-0013: Estabilizar la pantalla ignorando cambios mínimos y calibrando la latencia
 
-- Estado: Aceptado
+- Estado: Aceptado · calibración por sesión reemplazada por ADR-0015
 - Fecha: 2026-10-31
 - Decisores: equipo agent-screen
 
