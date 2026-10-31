@@ -70,3 +70,4 @@ CLAUDE.local.md
 !.env.example
 !.env.sample
 !.env.template
+spikes/out/
