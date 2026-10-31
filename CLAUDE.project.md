@@ -42,8 +42,8 @@ Flujo (diagrama en `../system-design-agent-screen/architecture.md`):
 1. La API valida el Bearer y el body, registra `en_curso` y devuelve `task_id` en < 2 s (ADR-0004).
 2. El worker toma la URL y la contraseña **de esa solicitud** (nunca de config) y adquiere el lease.
 3. Bucle: captura → LLM propone acción → `Guard` (esquema, límites de pantalla, plazo, destructivas) → RFB ejecuta → nueva observación.
-4. Interacción: clic con pulsación de **150 ms**; `Ctrl+A` antes de reemplazar texto; esperar el repintado (hasta 1 s). No asumir 1280×800 ni la disposición de la UI.
-5. Escrituras: esperar estabilización (2 capturas iguales separadas ≥ 1,2 s), buscar el registro y reintentar **solo si falta** (ADR-0007).
+4. Interacción: clic con pulsación de **150 ms**; `Ctrl+A` antes de reemplazar texto; tras cada acción, esperar un cambio significativo y estabilidad según el `lag` calibrado (ADR-0013). No asumir 1280×800 ni la disposición de la UI.
+5. Escrituras: esperar estabilización (1,2 s sin cambios > 50 px, ADR-0013), buscar el registro y reintentar **solo si falta** (ADR-0007).
 6. Fin: parar acciones → cerrar VNC (`destroy()`, timeout 2 s) → **después** persistir el estado terminal y el resumen.
 
 **Contratos** (literales; no cambiar nombres ni forma):
@@ -56,7 +56,7 @@ Flujo (diagrama en `../system-design-agent-screen/architecture.md`):
 **Fallas previstas** (escenario → mitigación):
 
 - WSS/RFB no conecta o se cae → reintento acotado solo si es seguro; si no, `fallida`; cerrar recursos.
-- Captura sin repintar → esperar estabilización; no tratarlo como fallo.
+- Captura sin repintar (lag medido ~3,4 s) → esperar `clamp(1,5×lag+0,5 s, 1,5 s, 8 s)`; nunca es fallo ni motivo de repetir.
 - Clic ignorado o texto concatenado → 150 ms, `Ctrl+A` y verificar el campo.
 - Acción inválida del LLM → rechazarla, volver a observar o `fallida`.
 - LLM lento o colgado → `AbortSignal` = min(25 s, restante − 5 s); 1 reintento solo ante 429/5xx; watchdog a los 270 s (ADR-0006, ADR-0012).
@@ -118,12 +118,12 @@ Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 
 - **Fail-fast:** `AGENT_API_TOKEN` (Bearer de `/tasks*`), `OPENROUTER_API_KEY` y `LLM_MODEL`. Opcional: `LLM_FALLBACK_MODELS`.
 - **Con valor por defecto:** `PORT` (3000), `DATABASE_PATH` (`/data/agent-screen.db` en Docker), `LOG_LEVEL` (info) y `NODE_ENV`.
-- La URL y la contraseña del escritorio **no** van en env: llegan en cada solicitud. Los plazos son constantes de código (ADR-0012), no env.
+- La URL y la contraseña del escritorio **no** van en env: llegan en cada solicitud. Excepción: `DESKTOP_URL`, `DESKTOP_PASSWORD` y `DESKTOP_TOKEN` (práctica) existen solo para `spikes/`, y `src/` **nunca** las lee. Los plazos son constantes de código (ADR-0012), no env.
 
 ## Testing
 
 - Unit: `src/**/*.spec.ts`, London (mocks de VNC y LLM). E2E: `test/*.e2e-spec.ts` con supertest. No hay umbral de cobertura.
-- Regresión obligatoria: el watchdog corta a los 270 s; ninguna acción tras el estado terminal; no reintentar una escritura si el registro ya aparece; bloqueo de homónimos; el `Guard` rechaza destructivas no pedidas y escrituras con < 30 s; el redactor elimina contraseña y token del resumen; formato `respuesta:`; `POST /tasks` < 2 s; `/health` 200 sin token; `/tasks*` 401 sin Bearer; 409 con el escritorio ocupado; las tareas `en_curso` pasan a `fallida` al reiniciar.
+- Regresión obligatoria: el watchdog corta a los 270 s; ninguna acción tras el estado terminal; no reintentar una escritura si el registro ya aparece; bloqueo de homónimos; el `Guard` rechaza destructivas no pedidas y escrituras con < 40 s; el caret no impide la estabilidad; calibración del lag; el redactor elimina contraseña y token del resumen; formato `respuesta:`; `POST /tasks` < 2 s; `/health` 200 sin token; `/tasks*` 401 sin Bearer; 409 con el escritorio ocupado; las tareas `en_curso` pasan a `fallida` al reiniciar.
 - Aceptación manual E1–E5: `__reset` → `POST /tasks` → poll → `__check`. Registrar diff, cambios extra, duplicados, estado, resumen y tiempo.
 
 ## Decisiones de arquitectura
@@ -132,15 +132,17 @@ Documentadas en `.env.example`. Se validan al boot con `getOrThrow`.
 - LLM decide, código propio ejecuta, sin memoria entre tareas → `0003` · API asíncrona + worker cancelable → `0004`
 - Una tarea por escritorio → `0005` · Watchdog 270 s → `0006` · Escrituras verificadas sin reintentos ciegos → `0007`
 - `Guard` anti-destructivas → `0008` · Bloqueo de homónimos → `0009` · Redactor de secretos + Bearer en tiempo constante → `0010`
-- SQLite (`better-sqlite3`, WAL) en volumen Docker; lease en memoria → `0011` · Presupuestos de tiempo (LLM 25 s, escrituras ≥ 30 s, conexión 10 s) → `0012`
+- SQLite (`better-sqlite3`, WAL) en volumen Docker; lease en memoria → `0011` · Presupuestos de tiempo (LLM 25 s, conexión 10 s) → `0012` · Estabilización con lag calibrado y escrituras ≥ 40 s → `0013`
 
 ## Notas / gotchas
 
 - **Node ≥ 24.9 obligatorio** (`nvm use`): con Node 22, Jest no carga Nest 12 (ESM) y falla con "Must use import to load ES Module". El `default` de nvm en esta máquina sigue apuntando a 22.
 - `nest build` deja la salida en `dist/main.js` (no en `dist/src/`).
 - `AGENTS.md` sugiere NestJS Observe. No forma parte del diseño: no lo añadas sin decidirlo, y nunca envíes capturas ni secretos a telemetría.
-- Spike de `rfb2` pendiente: valídalo antes de construir encima de `src/vnc/`.
-- Aún no hay commits en `master`.
+- **Spike `rfb2` superado (2026-10-31, `spikes/rfb2-spike.mjs`).** WSS + VNC auth listos en ~1,1 s; 1280×800, ZRLE; clic de 150 ms, `Ctrl+A` (reemplaza) y tecleo funcionan. Trampas medidas:
+  - La 1.ª update puede traer solo `extendedDesktopSize`: espera una con rects `pixels` o `copy`.
+  - Retraso de **~3,4 s** hasta ver el cambio (no 1 s). El cursor del ratón va dibujado en el framebuffer.
+  - El caret parpadea (1×13 px cada ~0,4–0,8 s): «dos capturas iguales» nunca se cumple; ignora cambios diminutos. La fecha de la app está en la cabecera («Hoy: dd/mm/aaaa»).
 - `/health` abierto y 409 por escritorio ocupado son decisiones posteriores al `design.md`: aquí mandan estas, no el diseño.
 
 ## Pendiente de confirmar

@@ -1,6 +1,6 @@
 # ADR-0007: Confirmar escrituras tras estabilización y no reintentar a ciegas
 
-- Estado: Aceptado
+- Estado: Aceptado · regla de estabilización reemplazada por ADR-0013
 - Fecha: 2026-10-31
 - Decisores: equipo agent-screen (System Design)
 
